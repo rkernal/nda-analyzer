@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, BarChart3, AlertTriangle, PenTool, ChevronRight, CheckCircle, AlertCircle, RefreshCw } from "lucide-react";
 import { ClauseTag } from "@/components/app/ClauseTag";
@@ -10,6 +10,31 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import type { Analysis } from "@/types";
+
+// Renders model-authored text: converts **bold** to <strong> and preserves
+// the line breaks the model emits (so numbered points don't run together).
+function RichText({ children, className = "" }: { children: string; className?: string }) {
+  const parts = children.split(/(\*\*[^*]+\*\*)/g);
+  return (
+    <p className={`whitespace-pre-line ${className}`}>
+      {parts.map((part, i) =>
+        part.startsWith("**") && part.endsWith("**") ? (
+          <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>
+        ) : (
+          part
+        ),
+      )}
+    </p>
+  );
+}
+
+function SectionLabel({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={`text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)] mb-1 ${className}`}>
+      {children}
+    </div>
+  );
+}
 
 function ResultsSkeleton() {
   return (
@@ -232,53 +257,74 @@ export default function ResultsPage() {
             </div>
 
             {isOpen && (
-              <div className="mt-3 pt-3 border-t border-black/10 space-y-3">
-                {clause.riskScore && (
+              <div className="mt-3 pt-3 border-t border-black/10" onClick={(e) => e.stopPropagation()}>
+                <div className="rounded-lg bg-white/80 p-4 space-y-4">
+                  {clause.riskScore ? (
+                    <div>
+                      <RiskMeter score={clause.riskScore} />
+                      {clause.riskReasoning && (
+                        <div className="mt-3">
+                          <SectionLabel>Risk analysis</SectionLabel>
+                          <RichText className="text-sm leading-relaxed text-slate-700">{clause.riskReasoning}</RichText>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
                   <div>
-                    <RiskMeter score={clause.riskScore} />
-                    {clause.riskReasoning && (
-                      <div className="mt-2 p-3 bg-white/60 rounded-lg">
-                        <div className="text-xs font-semibold text-slate-800 mb-1">Risk Analysis</div>
-                        <div className="text-sm text-slate-700 leading-relaxed">{clause.riskReasoning}</div>
-                      </div>
-                    )}
+                    <SectionLabel>Why this category</SectionLabel>
+                    <RichText className="text-sm leading-relaxed text-slate-700">{clause.explanation}</RichText>
                   </div>
-                )}
-                <div className={`text-sm ${c.text}`}><strong>Familiarity:</strong> {clause.explanation}</div>
-                {clause.matchedNda && <div className={`text-sm ${c.text}`}><strong>Matched NDA:</strong> {clause.matchedNda}</div>}
-                {clause.matchedClause && <div className={`text-sm ${c.text}`}><strong>Matched Clause:</strong> {clause.matchedClause}</div>}
-                {clause.suggestedAlternative && (
-                  <div className="bg-white/60 rounded-lg p-3">
-                    <div className="text-xs font-medium text-orange-800 mb-1">Your Past Alternative:</div>
-                    <div className="text-sm text-orange-900">{clause.suggestedAlternative}</div>
-                  </div>
-                )}
-                {clause.category === "conflicted" && (
-                  <div className="bg-white/60 rounded-lg p-3 space-y-2">
-                    <div className="text-xs font-semibold text-purple-900 mb-1">Conflict Detected</div>
-                    {clause.agreedIn && (
-                      <div className="flex items-start gap-2">
-                        <CheckCircle size={14} className="text-emerald-600 mt-0.5 shrink-0" />
-                        <div><span className="text-xs font-medium text-emerald-800">Agreed in:</span> <span className="text-sm text-slate-700">{clause.agreedIn}</span></div>
-                      </div>
-                    )}
-                    {clause.declinedIn && (
-                      <div className="flex items-start gap-2">
-                        <AlertCircle size={14} className="text-red-600 mt-0.5 shrink-0" />
-                        <div><span className="text-xs font-medium text-red-800">Declined in:</span> <span className="text-sm text-slate-700">{clause.declinedIn}</span></div>
-                      </div>
-                    )}
-                    {clause.conflictNote && (
-                      <div className="pt-2 border-t border-purple-200">
-                        <div className="text-xs font-medium text-purple-800 mb-0.5">Recommendation:</div>
-                        <div className="text-sm text-purple-900">{clause.conflictNote}</div>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {clause.confidence !== undefined && (
-                  <div className={`text-xs opacity-50 ${c.text}`}>Confidence: {Math.round(clause.confidence * 100)}%</div>
-                )}
+
+                  {(clause.matchedNda || clause.matchedClause) && (
+                    <div>
+                      <SectionLabel>Matched in your library</SectionLabel>
+                      {clause.matchedNda && (
+                        <p className="text-sm font-medium text-[var(--cornerstone-navy)]">{clause.matchedNda}</p>
+                      )}
+                      {clause.matchedClause && (
+                        <blockquote className="mt-1 border-l-2 border-[var(--border)] pl-3 text-sm italic leading-relaxed text-slate-600">
+                          {clause.matchedClause}
+                        </blockquote>
+                      )}
+                    </div>
+                  )}
+
+                  {clause.suggestedAlternative && (
+                    <div className="rounded-lg border border-orange-200 bg-orange-50 p-3">
+                      <SectionLabel className="text-orange-800">Your past alternative</SectionLabel>
+                      <RichText className="text-sm leading-relaxed text-orange-900">{clause.suggestedAlternative}</RichText>
+                    </div>
+                  )}
+
+                  {clause.category === "conflicted" && (clause.agreedIn || clause.declinedIn || clause.conflictNote) && (
+                    <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 space-y-2">
+                      <SectionLabel className="text-purple-800">Conflict detected</SectionLabel>
+                      {clause.agreedIn && (
+                        <div className="flex items-start gap-2 text-sm text-slate-700">
+                          <CheckCircle size={14} className="text-emerald-600 mt-0.5 shrink-0" />
+                          <span><span className="font-medium text-emerald-800">Agreed in:</span> {clause.agreedIn}</span>
+                        </div>
+                      )}
+                      {clause.declinedIn && (
+                        <div className="flex items-start gap-2 text-sm text-slate-700">
+                          <AlertCircle size={14} className="text-red-600 mt-0.5 shrink-0" />
+                          <span><span className="font-medium text-red-800">Declined in:</span> {clause.declinedIn}</span>
+                        </div>
+                      )}
+                      {clause.conflictNote && (
+                        <div className="pt-2 border-t border-purple-200">
+                          <SectionLabel className="text-purple-800">Recommendation</SectionLabel>
+                          <RichText className="text-sm leading-relaxed text-purple-900">{clause.conflictNote}</RichText>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {clause.confidence !== undefined && (
+                    <div className="text-xs text-[var(--muted)]">Match confidence: {Math.round(clause.confidence * 100)}%</div>
+                  )}
+                </div>
               </div>
             )}
           </div>

@@ -1,6 +1,6 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
-import { getClient, MODEL, runStructured } from "./anthropic";
+import { getClient, MODEL, MODEL_FAST, runStructured } from "./anthropic";
 import { STATUS_LABELS } from "./constants";
 import {
   classifyMatch,
@@ -42,6 +42,15 @@ const DETERMINISTIC_RISK: Record<string, number> = {
 };
 
 const MATCH_CAP = 800; // trim serialized match text (#5)
+const WEAK_LEXICAL = 0.5; // top lexical score below this → escalate to semantic rank
+const SEMANTIC_POOL_CAP = 40; // candidates fed to the Haiku semantic ranker
+
+const SEMANTIC_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: { topMatches: { type: "array", items: { type: "integer" } } },
+  required: ["topMatches"],
+} as const;
 
 const DEEP_SCHEMA = {
   type: "object",
@@ -68,6 +77,47 @@ const DEEP_SYSTEM =
 
 function statusLabel(s: NDAStatus): string {
   return STATUS_LABELS[s] || s;
+}
+
+/**
+ * Hybrid recall step (A.3): when lexical similarity is weak, have MODEL_FAST
+ * (Haiku) pick the candidates closest in MEANING / legal effect — catches
+ * reworded, re-split, or mis-typed matches that token overlap misses. Returns
+ * an empty array if Haiku finds nothing reasonably similar.
+ */
+async function semanticRank(
+  client: Anthropic,
+  clause: Clause,
+  pool: ClauseCandidate[],
+  topN: number,
+  signal?: AbortSignal,
+): Promise<ClauseCandidate[]> {
+  if (pool.length <= topN) return pool;
+  const condensed = pool
+    .map((c, i) => `${i}. [${statusLabel(c.ndaStatus)}] ${c.ndaName} (${c.version}) | ${c.title}: ${c.text.slice(0, 150)}`)
+    .join("\n");
+  const result = await runStructured<{ topMatches: number[] }>(client, {
+    model: MODEL_FAST,
+    system:
+      "You are a legal-clause similarity ranker. Pick the candidate clauses closest to the TARGET in meaning and legal effect — match by substance, not wording. Return up to 5 candidate indices, most similar first. Return an empty array if none are reasonably similar.",
+    content: [
+      {
+        type: "text",
+        text:
+          `TARGET CLAUSE:\nTitle: ${clause.title}\nType: ${clause.clauseType || "other"}\nText: ${clause.text}\n\n` +
+          `CANDIDATES (index. [status] name (version) | title: preview):\n${condensed}`,
+      },
+    ],
+    toolName: "emit_matches",
+    schema: SEMANTIC_SCHEMA as unknown as Anthropic.Tool.InputSchema,
+    maxTokens: 200,
+    signal,
+  });
+  const idxs = Array.isArray(result.topMatches) ? result.topMatches : [];
+  return idxs
+    .filter((i) => Number.isInteger(i) && i >= 0 && i < pool.length)
+    .slice(0, topN)
+    .map((i) => pool[i]);
 }
 
 /**
@@ -123,15 +173,30 @@ export async function compareClause(
     }
   }
 
-  // --- Cost opt #2: local candidate shortlist (replaces the Pass-1 LLM call) ---
-  const ranked = rankBySimilarity(clause.text, pool, (c) => c.text, 5).map((r) => r.item);
+  // --- Cost opt #2 + hybrid semantic ranker: pick the top-5 candidates. ---
+  // Lexical rank first. If the best lexical match is weak (a reworded / re-split
+  // / mis-typed clause), escalate to a cheap Haiku semantic re-rank over ALL
+  // candidates (not just same-type) — this is the recall fix for false
+  // "new language" verdicts (PORTING-SPEC A.3).
+  const client = getClient();
+  const lexTop = rankBySimilarity(clause.text, pool, (c) => c.text, 5);
+  const bestScore = lexTop[0]?.score ?? 0;
+
+  let shortlist: ClauseCandidate[];
+  if (client && bestScore < WEAK_LEXICAL) {
+    const coarse = rankBySimilarity(clause.text, candidates, (c) => c.text, SEMANTIC_POOL_CAP).map((r) => r.item);
+    const semantic = await semanticRank(client, clause, coarse, 5, signal).catch(() => null);
+    shortlist = semantic && semantic.length ? semantic : lexTop.map((r) => r.item);
+  } else {
+    shortlist = lexTop.map((r) => r.item);
+  }
+
   // #5: dedup near-identical candidates before serializing context.
   const topCandidates: ClauseCandidate[] = [];
-  for (const c of ranked) {
+  for (const c of shortlist) {
     if (!topCandidates.some((t) => isNearDuplicate(t.text, c.text))) topCandidates.push(c);
   }
 
-  const client = getClient();
   if (!client) return stubCompare(topCandidates);
 
   // --- A.0 FIX: hyphenated status values (was underscored → orange/red dead) ---
