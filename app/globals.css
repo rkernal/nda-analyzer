@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+:root {
+  /* Cornerstone brand accent (from the letterhead) */
+  --cornerstone-navy: #14323f;
+  --cornerstone-navy-600: #1d4a5e;
+  --cornerstone-orange: #e8742c;
+  --cornerstone-orange-600: #d4641f;
+
+  /* Sandbox-style neutral shell */
+  --background: #fafaf9;
+  --foreground: #1b2733;
+  --card: #ffffff;
+  --border: #e7e5e4;
+  --muted: #78716c;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-navy: var(--cornerstone-navy);
+  --color-orange: var(--cornerstone-orange);
+  --font-sans: var(--font-geist-sans);
+  --font-display: var(--font-display);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Display font for page headings (matches the Sandbox convention). */
+.font-display {
+  font-family: var(--font-display), var(--font-geist-sans), sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* Brand focus ring (replaces the Sandbox's indigo). */
+*:focus-visible {
+  outline: 2px solid var(--cornerstone-orange);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Staggered entrance, borrowed from the Sandbox. */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up {
+  animation: fade-up 400ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+/* ---- Small component utilities (keeps the JSX terse) ---- */
+@layer components {
+  .card {
+    @apply rounded-xl border bg-[var(--card)] shadow-sm;
+    border-color: var(--border);
+  }
+  .field {
+    @apply mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm transition-colors;
+    border-color: var(--border);
+  }
+  .field:focus {
+    border-color: var(--cornerstone-orange);
+  }
+  .label {
+    @apply text-sm font-medium;
+    color: var(--cornerstone-navy);
+  }
+  .btn-primary {
+    @apply rounded-lg px-5 py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-50;
+    background: var(--cornerstone-orange);
+  }
+  .btn-primary:hover { background: var(--cornerstone-orange-600); }
+  .btn-secondary {
+    @apply rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors;
+    border-color: var(--border);
+    color: var(--cornerstone-navy);
+  }
+  .btn-secondary:hover { background: #f5f5f4; }
+  .pill {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+  }
+}
