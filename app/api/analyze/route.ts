@@ -7,6 +7,10 @@ import { extractClauses } from "@/lib/extractClauses";
 import { docHash, libraryFingerprint } from "@/lib/similarity";
 import type { AnalysisResult } from "@/types";
 
+// How many clauses to deep-compare in parallel. Higher = faster wall-clock but
+// more pressure on the Anthropic rate limit; 5 is a safe default at this scale.
+const ANALYZE_CONCURRENCY = 5;
+
 function sseEvent(data: Record<string, unknown>): string {
   return `data: ${JSON.stringify(data)}\n\n`;
 }
@@ -72,20 +76,22 @@ export async function POST(req: Request) {
         }
 
         const total = clauses.length;
-        send({ progress: { cur: 0, tot: total, msg: `Found ${total} clauses. Starting comparison...` } });
+        send({ progress: { cur: 0, tot: total, msg: `Found ${total} clauses. Comparing...` } });
 
-        // Step 2: compare each clause (deterministic short-circuit, else MODEL).
-        const results: AnalysisResult[] = [];
-        for (let i = 0; i < total; i++) {
-          if (abortController.signal.aborted) return void send({ error: "Analysis cancelled." });
+        // Step 2: compare each clause with bounded concurrency (deterministic
+        // short-circuit, else MODEL). Parallelism keeps a 20+ clause NDA well
+        // under the function timeout; results stay in clause order.
+        const results: AnalysisResult[] = new Array(total);
+        let completed = 0;
+        let nextIdx = 0;
+
+        const runOne = async (i: number) => {
           const clause = clauses[i];
-          send({ progress: { cur: i, tot: total, msg: `Analyzing clause ${i + 1} of ${total}: "${clause.title}"` } });
-
           let comparison;
           try {
             comparison = await compareClause(clause, candidates, abortController.signal);
           } catch (e) {
-            if (abortController.signal.aborted) return void send({ error: "Analysis cancelled." });
+            if (abortController.signal.aborted) return; // leave the slot; we bail below
             console.error(`Clause ${i + 1} comparison failed:`, e);
             comparison = {
               category: "white", explanation: "Analysis for this clause failed — marked as new language.",
@@ -94,8 +100,21 @@ export async function POST(req: Request) {
               agreedIn: null, declinedIn: null, conflictNote: null,
             };
           }
-          results.push({ ...clause, ...comparison });
-        }
+          results[i] = { ...clause, ...comparison };
+          completed++;
+          send({ progress: { cur: completed, tot: total, msg: `Analyzed ${completed} of ${total} clauses...` } });
+        };
+
+        // Worker pool: each worker pulls the next index until the queue drains.
+        const worker = async () => {
+          while (!abortController.signal.aborted) {
+            const i = nextIdx++;
+            if (i >= total) return;
+            await runOne(i);
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(ANALYZE_CONCURRENCY, total) }, worker));
+        if (abortController.signal.aborted) return void send({ error: "Analysis cancelled." });
 
         // Step 3: summary.
         send({ progress: { cur: total, tot: total, msg: "Calculating results..." } });
