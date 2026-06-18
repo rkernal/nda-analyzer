@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { History, BarChart3, FileSearch, RefreshCw, AlertTriangle } from "lucide-react";
+import { History, BarChart3, FileSearch, RefreshCw, AlertTriangle, Trash2 } from "lucide-react";
 import { COLORS } from "@/lib/constants";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -55,6 +55,18 @@ export default function HistoryPage() {
     fetchAnalyses();
   }, []);
 
+  const deleteAnalysis = async (id: string) => {
+    if (!confirm("Delete this analysis from your history?")) return;
+    try {
+      const res = await fetch(`/api/analyses/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      setAnalyses((prev) => prev.filter((a) => a.id !== id));
+      toast.success("Analysis deleted");
+    } catch {
+      toast.error("Failed to delete analysis");
+    }
+  };
+
   if (loading) return <HistorySkeleton />;
 
   if (error) {
@@ -91,28 +103,37 @@ export default function HistoryPage() {
           {analyses.map((a) => {
             const summary = a.summary as AnalysisSummary | undefined;
             return (
-              <Link key={a.id} href={`/results/${a.id}`} className="card block p-4 transition-colors hover:bg-stone-50">
-                <div className="font-medium text-[var(--cornerstone-navy)] flex items-center gap-2">
-                  <BarChart3 size={16} className="text-[var(--cornerstone-orange)]" />
-                  {a.ndaName}
-                </div>
-                <div className="text-xs text-[var(--muted)] mt-1">
-                  {new Date(a.createdAt).toLocaleDateString()} &bull; Familiarity: {Math.round(a.familiarityPct || 0)}% &bull; Avg Risk: {(a.avgRiskScore || 0).toFixed(1)}
-                </div>
-                {summary && (
-                  <div className="flex gap-1.5 mt-2 flex-wrap">
-                    {Object.entries(COLORS).map(([k, v]) => {
-                      const count = (summary as unknown as Record<string, number>)[k] || 0;
-                      if (count === 0) return null;
-                      return (
-                        <span key={k} className={`${v.badge} text-white text-xs px-2 py-0.5 rounded-full`}>
-                          {count} {v.label}
-                        </span>
-                      );
-                    })}
+              <div key={a.id} className="card p-4 flex items-start gap-3 transition-colors hover:bg-stone-50">
+                <Link href={`/results/${a.id}`} className="flex-1 min-w-0">
+                  <div className="font-medium text-[var(--cornerstone-navy)] flex items-center gap-2">
+                    <BarChart3 size={16} className="text-[var(--cornerstone-orange)]" />
+                    {a.ndaName}
                   </div>
-                )}
-              </Link>
+                  <div className="text-xs text-[var(--muted)] mt-1">
+                    {new Date(a.createdAt).toLocaleDateString()} &bull; Familiarity: {Math.round(a.familiarityPct || 0)}% &bull; Avg Risk: {(a.avgRiskScore || 0).toFixed(1)}
+                  </div>
+                  {summary && (
+                    <div className="flex gap-1.5 mt-2 flex-wrap">
+                      {Object.entries(COLORS).map(([k, v]) => {
+                        const count = (summary as unknown as Record<string, number>)[k] || 0;
+                        if (count === 0) return null;
+                        return (
+                          <span key={k} className={`${v.badge} text-white text-xs px-2 py-0.5 rounded-full`}>
+                            {count} {v.label}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Link>
+                <button
+                  onClick={() => deleteAnalysis(a.id)}
+                  className="text-[var(--muted)] hover:text-red-600 p-1 shrink-0"
+                  title="Delete analysis"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
             );
           })}
         </div>

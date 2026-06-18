@@ -2,7 +2,7 @@
 
 import { useState, useEffect, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, BarChart3, AlertTriangle, PenTool, ChevronRight, CheckCircle, AlertCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, BarChart3, AlertTriangle, PenTool, ChevronRight, CheckCircle, AlertCircle, RefreshCw, BookPlus } from "lucide-react";
 import { ClauseTag } from "@/components/app/ClauseTag";
 import { RiskMeter } from "@/components/app/RiskMeter";
 import { COLORS, CATEGORY_ORDER } from "@/lib/constants";
@@ -98,6 +98,15 @@ export default function ResultsPage() {
     fetchResults();
   }, [params.id]);
 
+  // Hand the analyzed text to the library "add" form (which handles status +
+  // original-draft for remediated NDAs) so the analyzed NDA can become part of
+  // future comparisons once its outcome is known.
+  const addToLibrary = () => {
+    if (!analysis) return;
+    sessionStorage.setItem("nda-prefill", JSON.stringify({ name: analysis.ndaName, text: analysis.rawText }));
+    router.push("/library/add");
+  };
+
   if (loading) return <ResultsSkeleton />;
 
   if (error) {
@@ -139,9 +148,14 @@ export default function ResultsPage() {
 
   return (
     <div className="animate-fade-up">
-      <button onClick={() => router.push("/history")} className="flex items-center gap-1 text-[var(--muted)] hover:text-[var(--cornerstone-navy)] text-sm mb-4">
-        <ArrowLeft size={16} /> Back to Analyses
-      </button>
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <button onClick={() => router.push("/history")} className="flex items-center gap-1 text-[var(--muted)] hover:text-[var(--cornerstone-navy)] text-sm">
+          <ArrowLeft size={16} /> Back to Analyses
+        </button>
+        <Button onClick={addToLibrary} variant="outline" className="h-9 text-sm">
+          <BookPlus className="h-4 w-4 mr-2" /> Add to my library
+        </Button>
+      </div>
 
       {/* Summary Card */}
       <div className="card p-5 mb-6">

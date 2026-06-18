@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,21 @@ export default function AddNdaPage() {
   const [uploading, setUploading] = useState<string | null>(null);
   const [progress, setProgress] = useState({ cur: 0, tot: 0, msg: "" });
   const [error, setError] = useState("");
+  const [fromAnalysis, setFromAnalysis] = useState(false);
+
+  // Pre-fill from an analyzed NDA handed over by the results page (Add to library).
+  useEffect(() => {
+    const raw = sessionStorage.getItem("nda-prefill");
+    if (!raw) return;
+    sessionStorage.removeItem("nda-prefill");
+    try {
+      const { name, text } = JSON.parse(raw);
+      setForm((p) => ({ ...p, name: name || p.name, text: text || p.text }));
+      setFromAnalysis(true);
+    } catch {
+      // ignore malformed prefill
+    }
+  }, []);
 
   const handleUpload = async (file: File, target: string) => {
     setUploading(target);
@@ -115,6 +130,12 @@ export default function AddNdaPage() {
   return (
     <div className="max-w-2xl animate-fade-up">
       <h1 className="font-display text-2xl font-bold text-[var(--cornerstone-navy)] mb-6">Add NDA to Library</h1>
+
+      {fromAnalysis && (
+        <div className="bg-orange-50 border border-orange-200 text-orange-900 text-sm rounded-md p-3 mb-4">
+          Loaded from your analysis. Set the outcome status below (and paste the original draft if it was remediated), then save.
+        </div>
+      )}
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md p-3 mb-4">{error}</div>}
 

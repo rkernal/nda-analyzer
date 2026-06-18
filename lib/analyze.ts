@@ -42,6 +42,10 @@ const DETERMINISTIC_RISK: Record<string, number> = {
 };
 
 const MATCH_CAP = 800; // trim serialized match text (#5)
+// Bump whenever engine logic changes (prompts, ranking, thresholds) so the
+// analysis cache (#4) auto-invalidates and re-runs reflect the current code.
+export const ENGINE_VERSION = 2;
+
 const WEAK_LEXICAL = 0.5; // top lexical score below this → escalate to semantic rank
 const SEMANTIC_POOL_CAP = 40; // candidates fed to the Haiku semantic ranker
 

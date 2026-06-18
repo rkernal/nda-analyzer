@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionEmail } from "@/lib/session";
 import { listNdas } from "@/lib/ndaStore";
 import { createAnalysis, findAnalysisByHash } from "@/lib/analysisStore";
-import { buildCandidates, compareClause, computeSummary } from "@/lib/analyze";
+import { buildCandidates, compareClause, computeSummary, ENGINE_VERSION } from "@/lib/analyze";
 import { extractClauses } from "@/lib/extractClauses";
 import { docHash, libraryFingerprint } from "@/lib/similarity";
 import type { AnalysisResult } from "@/types";
@@ -35,8 +35,10 @@ export async function POST(req: Request) {
   }
 
   const candidates = buildCandidates(ndas);
-  // Cost opt #4: cache key = normalized doc text + library fingerprint.
-  const hash = docHash(text, libraryFingerprint(ndas.map((n) => ({ id: n.id, dateAdded: n.dateAdded }))));
+  // Cost opt #4: cache key = normalized doc text + library fingerprint + engine
+  // version (so engine changes invalidate stale analyses automatically).
+  const fingerprint = `engine:${ENGINE_VERSION}|` + libraryFingerprint(ndas.map((n) => ({ id: n.id, dateAdded: n.dateAdded })));
+  const hash = docHash(text, fingerprint);
 
   const encoder = new TextEncoder();
   const abortController = new AbortController();
